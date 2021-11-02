@@ -1,4 +1,4 @@
-import { Process, Processor } from '@nestjs/bull';
+import { OnQueueCompleted, OnQueueFailed, Process, Processor } from '@nestjs/bull';
 import { HttpStatus, Logger } from '@nestjs/common';
 import { Job } from 'bull';
 import { Readable } from 'stream';
@@ -16,6 +16,18 @@ export class ExcelProcessor {
     private gateway: ExcelGateway,
     private configService: ConfigService,
   ) {}
+
+  @OnQueueCompleted()
+  completedHandle(job: Job, result: any){
+    this.gateway.server.emit('events', { statusCode: HttpStatus.OK });
+  }
+
+  @OnQueueFailed()
+  async failedHandler(job: Job, result: any){
+    this.gateway.server.emit('events', {
+        statusCode: HttpStatus.BAD_REQUEST,
+      });
+  }
 
   @Process('bulk')
   async handleTranscode(job: Job) {
@@ -52,13 +64,10 @@ export class ExcelProcessor {
       await request(this.configService.get<string>('gql'), query, {
         students: student,
       });
-      this.gateway.server.emit('events', { statusCode: HttpStatus.OK });
       this.logger.debug('Transcoding completed');
     } catch (error) {
       this.logger.debug('Transcoding Failed', error);
-      this.gateway.server.emit('events', {
-        statusCode: HttpStatus.BAD_REQUEST,
-      });
+      throw new Error(error);
     }
   }
 }
